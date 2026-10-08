@@ -1,0 +1,129 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+
+
+/*
+ * Farbsystem "Tinte & Papier":
+ * kühles Papiergrau, tiefes Tintenblau als einziger Akzent, Grün/Rot nur für Entwicklungen.
+ */
+:root {
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --surface-2: #eceef2;
+  --ink: #151821;
+  --ink-2: #5b6170;
+  --ink-3: #969cab;
+  --line: rgb(21 24 33 / 0.08);
+  --accent: #3442c9;
+  --accent-ink: #ffffff;
+  --accent-soft: #e7e9fa;
+  --pos: #1c8455;
+  --pos-soft: #e1f2e9;
+  --neg: #c03c35;
+  --neg-soft: #f9e4e2;
+  --warn: #a8670f;
+  --warn-soft: #f8ecd9;
+  --card-1: #1f2a8c;
+  --card-2: #3442c9;
+  --shadow: 0 1px 2px rgb(21 24 33 / 0.04), 0 4px 16px rgb(21 24 33 / 0.04);
+
+  /* Kategorien – gedämpft, in beiden Modi unterscheidbar */
+  /* validierte Kategorienpalette (Farbsehschwäche-Prüfung), feste Zuordnung je Oberkategorie */
+  --c1: #2a78d6; --c2: #1baf7a; --c3: #eb6834; --c4: #4a3aa7; --c5: #e87ba4; --c6: #e34948;
+  --c7: #eda100; --c8: #008300; --c9: #1c8455; --c10: #6b7280; --c11: #a39e8a; --c12: #8e95a3;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1017; --surface: #171b24; --surface-2: #212633; --ink: #eef0f5; --ink-2: #a2a8b6; --ink-3: #6c7282;
+    --line: rgb(238 240 245 / 0.08); --accent: #8d98ff; --accent-ink: #0d1017; --accent-soft: #232845;
+    --pos: #4fc58d; --pos-soft: #16302a; --neg: #f07d73; --neg-soft: #3a1f20; --warn: #e3a94a; --warn-soft: #3a2c17;
+    --card-1: #1a1f55; --card-2: #2d38a6;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+    --c1: #3987e5; --c2: #199e70; --c3: #d95926; --c4: #9085e9; --c5: #d55181; --c6: #e66767;
+    --c7: #c98500; --c8: #008300; --c9: #4fc58d; --c10: #9aa1ae; --c11: #8f8b78; --c12: #7d8494;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1017; --surface: #171b24; --surface-2: #212633; --ink: #eef0f5; --ink-2: #a2a8b6; --ink-3: #6c7282;
+  --line: rgb(238 240 245 / 0.08); --accent: #8d98ff; --accent-ink: #0d1017; --accent-soft: #232845;
+  --pos: #4fc58d; --pos-soft: #16302a; --neg: #f07d73; --neg-soft: #3a1f20; --warn: #e3a94a; --warn-soft: #3a2c17;
+  --card-1: #1a1f55; --card-2: #2d38a6;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  --c1: #3987e5; --c2: #199e70; --c3: #d95926; --c4: #9085e9; --c5: #d55181; --c6: #e66767;
+  --c7: #c98500; --c8: #008300; --c9: #4fc58d; --c10: #9aa1ae; --c11: #8f8b78; --c12: #7d8494;
+  color-scheme: dark;
+}
+
+@theme {
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-pos: var(--pos);
+  --color-pos-soft: var(--pos-soft);
+  --color-neg: var(--neg);
+  --color-neg-soft: var(--neg-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --radius-card: 22px;
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer base {
+* { box-sizing: border-box; }
+/* App-Gerüst wie Basislager: Die Seite selbst scrollt nie, nur der Inhaltsbereich.
+   So verrutschen Tab-Leiste und Sheets auf iOS nicht. */
+html, body { margin: 0; height: var(--app-h, 100vh); overflow: hidden; background: var(--bg); color: var(--ink); overscroll-behavior: none; }
+html { min-height: calc(100% + env(safe-area-inset-top)); touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+  font-size: 17px; line-height: 1.4;
+}
+#root { position: fixed; inset: 0; display: flex; flex-direction: column; }
+input, select, textarea, button { font: inherit; color: inherit; }
+/* Texteingaben ≥ 16 px, damit iOS beim Antippen nicht hineinzoomt */
+input, select, textarea { font-size: max(16px, 1em); }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum", "ss01"; }
+.scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+.press { transition: transform 120ms var(--ease-ios), background-color 120ms; }
+.press:active { transform: scale(0.98); }
+.row-press:active { background: var(--surface-2); }
+
+}
+
+/* Guilloche-Linien auf der Kontokarte (wie auf Banknoten) */
+.guilloche { position: absolute; inset: 0; opacity: 0.22; pointer-events: none; }
+
+@keyframes sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-sheet { animation: sheet-in 380ms var(--ease-ios) both; }
+.animate-fade { animation: fade-in 220ms ease-out both; }
+.animate-rise { animation: rise 420ms var(--ease-ios) both; }
+.skeleton { background: linear-gradient(90deg, var(--surface-2) 0, var(--line) 50%, var(--surface-2) 100%); background-size: 200px 100%; animation: shimmer 1.3s infinite linear; border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+@layer base {
+/* iOS: Datumsfelder sonst mit Eigenbreite */
+input[type='date'] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; min-height: 48px; text-align: left; }
+input[type='date']::-webkit-date-and-time-value { text-align: left; margin: 0; }
+}
