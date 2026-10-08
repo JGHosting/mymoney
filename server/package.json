@@ -1,0 +1,27 @@
+{
+  "name": "mymoney-fints-bridge",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Zustandslose FinTS-Brücke zwischen der App und der VR Bank",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fastify": "^5.12.5",
+    "lib-fints": "^1.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9",
+    "vitest": "^4.1.11"
+  }
+}

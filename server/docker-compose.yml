@@ -1,0 +1,29 @@
+# Variante A (VPS mit eigener Domain): docker compose --profile https up -d
+# Variante B (Raspberry Pi + Tailscale):  docker compose up -d   und danach  tailscale serve --bg 8787
+services:
+  bridge:
+    build: .
+    env_file: .env
+    ports:
+      - "127.0.0.1:8787:8787"     # nur lokal erreichbar; nach außen nur über Caddy bzw. Tailscale (HTTPS)
+    volumes:
+      - bridge-data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: [https]
+    depends_on: [bridge]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN in .env setzen}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    restart: unless-stopped
+
+volumes:
+  bridge-data:
+  caddy-data:

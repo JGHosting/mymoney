@@ -16,7 +16,7 @@
  *   POST   /api/fints/sessions              { pin }            → { sessionId } | { sessionId, tan: TanChallenge }
  *   POST   /api/fints/sessions/:id/tan      { tan? }           → { ok: true } | { pending: true }
  *   GET    /api/fints/sessions/:id/accounts                    → BankAccountData[]
- *   GET    /api/fints/sessions/:id/accounts/:ext/balance       → BankBalance
+ *   GET    /api/fints/sessions/:id/accounts/:ext/balance       → BankBalance | { tan }
  *   GET    /api/fints/sessions/:id/accounts/:ext/transactions?from&to  → BankTransactionData[] | { tan }
  *   DELETE /api/fints/sessions/:id
  * Fehler: { error: BankErrorKind, detail? } mit HTTP 4xx/5xx.
@@ -83,7 +83,12 @@ export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | unde
 
       return {
         getAccounts: () => call<BankAccountData[]>('GET', `/api/fints/sessions/${sid}/accounts`),
-        getBalance: (ext: string) => call<BankBalance>('GET', `/api/fints/sessions/${sid}/accounts/${encodeURIComponent(ext)}/balance`),
+        async getBalance(ext: string) {
+          const path = `/api/fints/sessions/${sid}/accounts/${encodeURIComponent(ext)}/balance`;
+          let r = await call<BankBalance | { tan: TanChallenge }>('GET', path);
+          if ('tan' in r) { await handleTan(r.tan); r = await call<BankBalance>('GET', path); }
+          return r as BankBalance;
+        },
         async getTransactions(ext: string, from: string, to: string) {
           const path = `/api/fints/sessions/${sid}/accounts/${encodeURIComponent(ext)}/transactions?from=${from}&to=${to}`;
           // Umsatzabruf älter als 90 Tage verlangt bei PSD2 oft eine zusätzliche TAN

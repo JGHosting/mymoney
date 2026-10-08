@@ -52,7 +52,7 @@ Der Rest der App weiß nicht, wie eine Bank technisch angebunden ist. Ein neuer 
 | `src/backup/` | Backup/Import/Prüfroutine (aus Basislager übernommen) |
 | `src/store/` | UI-Zustand (Zustand): Darstellung, Sync-Fortschritt, PIN/TAN-Abfrage |
 | `src/ui/` | Seiten, Komponenten, Diagramme (eigene SVG-Diagramme, keine Chart-Bibliothek) |
-| `server/` | FinTS-Brücke (Phase 5, API-Vertrag dokumentiert) |
+| `server/` | FinTS-Brücke: Node/Fastify + lib-fints, Docker, Einrichtungsanleitung (`server/README.md`) |
 
 ### Technik
 
@@ -94,7 +94,7 @@ Die App spricht nie direkt mit der Bank, sondern über eine kleine **FinTS-Brüc
 (Raspberry Pi, Heimserver oder günstiger VPS). Der Grund: Browser dürfen den FinTS-Server der Bank nicht direkt
 ansprechen (CORS), und die FinTS-Produkt-ID gehört nicht in ausgelieferten Code. Details und API-Vertrag: `server/README.md`.
 
-Konfiguration der Brücke über Umgebungsvariablen (siehe `.env.example`): `FINTS_URL`, `FINTS_BLZ`, `FINTS_USER`,
+Konfiguration der Brücke über Umgebungsvariablen (siehe `server/.env.example`): `FINTS_URL`, `FINTS_BLZ`, `FINTS_USER`,
 `FINTS_PRODUCT_ID`, `BRIDGE_TOKEN`, `ALLOWED_ORIGIN`, `PORT`.
 
 In der App: Mehr → Bankverbindung → Adresse und Zugangsschlüssel der Brücke eintragen → Verbinden.
@@ -104,7 +104,7 @@ In der App: Mehr → Bankverbindung → Adresse und Zugangsschlüssel der Brück
 | Entscheidung | Umsetzung |
 |---|---|
 | Bank-PIN nie speichern | Wird bei jedem Sync abgefragt, nur im Formular gehalten und für genau einen Abruf übertragen. Nicht in IndexedDB, nicht in LocalStorage, nicht im Backup, nicht auf der Brücke. |
-| Keine Secrets im Repository | `.env` ist in `.gitignore`; nur `.env.example` ohne Werte liegt im Repo. |
+| Keine Secrets im Repository | `.env` ist in `.gitignore`; nur `server/.env.example` ohne Werte liegt im Repo. |
 | Zugangsschlüssel der Brücke | Nur lokal in IndexedDB (`settings.fintsBridge`), ausdrücklich vom Backup ausgeschlossen (Test vorhanden). |
 | Keine Zugangsdaten in Logs/Fehlern | Fehler werden in Klassen übersetzt (`BankError`), dem Nutzer nur verständliche Texte; das Sync-Protokoll enthält keine Eingaben. |
 | HTTPS | GitHub Pages läuft nur über HTTPS; die Brücke wird ebenfalls nur per HTTPS erreichbar sein und `Authorization` sowie `Origin` prüfen. |
@@ -133,5 +133,6 @@ Backup-Rundlauf.
 - [x] 2 Oberfläche mit Demo-Daten
 - [x] 3 Datenmodell
 - [x] 4 Demo-Bank (MockBankingProvider)
-- [ ] 5 FinTS-Brücke + echte VR-Bank-Anbindung (wartet auf FinTS-Produktregistrierung)
+- [x] 5a FinTS-Brücke (getestet gegen nachgebaute Bank)
+- [ ] 5b Erster echter Abruf bei der VR Bank (wartet auf die FinTS-Registrierungsnummer)
 - [ ] 6 Feinschliff auf dem iPhone

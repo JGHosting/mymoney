@@ -1,0 +1,5 @@
+# HTTPS-Zertifikat holt Caddy automatisch (Let's Encrypt)
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy bridge:8787
+}
