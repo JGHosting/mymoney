@@ -80,6 +80,11 @@
 
 @layer base {
 * { box-sizing: border-box; }
+/* App-Gefühl: Gedrückthalten öffnet keine Link-Vorschau / kein "In neuem Fenster öffnen" und markiert keinen Text.
+   Eingabefelder und ausdrücklich kopierbare Texte (.select-text) bleiben auswählbar. */
+html { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+a, button, img, svg { -webkit-touch-callout: none; -webkit-user-drag: none; }
+input, textarea, select, .select-text { -webkit-touch-callout: default; -webkit-user-select: text; user-select: text; }
 /* App-Gerüst wie Basislager: Die Seite selbst scrollt nie, nur der Inhaltsbereich.
    So verrutschen Tab-Leiste und Sheets auf iOS nicht. */
 html, body { margin: 0; height: var(--app-h, 100vh); overflow: hidden; background: var(--bg); color: var(--ink); overscroll-behavior: none; }
