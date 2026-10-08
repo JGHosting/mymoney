@@ -53,6 +53,10 @@ Adresse für die App: `https://<DOMAIN>`
 
 ### Variante B – Raspberry Pi / Rechner zu Hause + Tailscale
 
+> Empfohlen: das Repo **homeserver** nutzen. Es richtet den Pi komplett ein (Docker, Tailscale, Caddy, Updates, Backups)
+> und holt das fertige Image `ghcr.io/jghosting/mymoney-bridge` – der Pi muss nichts selbst bauen.
+> Die Schritte unten sind die Variante ohne dieses Repo.
+
 Kostenlos, nichts ist öffentlich im Internet. Das iPhone braucht dafür die Tailscale-App (eingeschaltet beim Sync).
 
 1. Docker installieren (`curl -fsSL https://get.docker.com | sh`) und [Tailscale](https://tailscale.com/download) auf
