@@ -8,3 +8,4 @@ dev-dist
 *.log
 coverage
 server/data
+*.tsbuildinfo
