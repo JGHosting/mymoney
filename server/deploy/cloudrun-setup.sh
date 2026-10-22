@@ -43,7 +43,8 @@ echo "Projekt: $PROJECT ($NUM), Region: $REGION"
 
 say "Schnittstellen aktivieren"
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com \
-  iamcredentials.googleapis.com sts.googleapis.com --project "$PROJECT"
+  iamcredentials.googleapis.com sts.googleapis.com cloudbilling.googleapis.com billingbudgets.googleapis.com \
+  --project "$PROJECT"
 ok "aktiv"
 
 say "Dienstkonten"
@@ -153,16 +154,15 @@ gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$DEPL
 ok "nur Pushes auf main von $GITHUB_REPO dürfen bereitstellen"
 
 say "Budget-Warnung (1 €)"
-BILLING="$(gcloud billing projects describe "$PROJECT" --format='value(billingAccountName)' 2>/dev/null | sed 's#billingAccounts/##' || true)"
+BILLING="$(gcloud billing projects describe "$PROJECT" --format='value(billingAccountName)' --quiet 2>/dev/null </dev/null | sed 's#billingAccounts/##' || true)"
 if [[ -z "$BILLING" ]]; then
   warn "Kein Rechnungskonto gefunden – Budget bitte in der Konsole anlegen (Abrechnung → Budgets & Benachrichtigungen)."
-elif gcloud billing budgets list --billing-account "$BILLING" --format='value(displayName)' 2>/dev/null | grep -qx "MyMoney"; then
+elif gcloud billing budgets list --billing-account "$BILLING" --format='value(displayName)' --quiet 2>/dev/null </dev/null | grep -qx "MyMoney"; then
   ok "vorhanden"
 else
-  gcloud services enable billingbudgets.googleapis.com --project "$PROJECT" >/dev/null 2>&1 || true
   if gcloud billing budgets create --billing-account "$BILLING" --display-name "MyMoney" \
        --budget-amount 1EUR --filter-projects "projects/$PROJECT" \
-       --threshold-rule percent=0.5 --threshold-rule percent=1.0 >/dev/null 2>&1; then
+       --threshold-rule percent=0.5 --threshold-rule percent=1.0 --quiet >/dev/null 2>&1 </dev/null; then
     ok "E-Mail bei 0,50 € und 1 €"
   else
     warn "Budget konnte nicht angelegt werden – bitte in der Konsole: Abrechnung → Budgets & Benachrichtigungen → 1 €."
