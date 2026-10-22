@@ -13,7 +13,13 @@ import { getProvider } from '../banking/registry';
 import { importTransactions, loadContext } from './importer';
 import { refreshRecurring } from './recurring';
 
-export interface SyncState { historyDone: boolean; lastSyncAt?: number; lastSyncDate?: string }
+export interface SyncState {
+  historyDone: boolean; lastSyncAt?: number; lastSyncDate?: string;
+  /** Konten, deren Historie angekommen ist. Fehlt ein Konto, holt der nächste Sync wieder die volle Historie. */
+  historyAccounts?: string[];
+  /** Fehlversuche (leere Historie) je Konto – nach MAX_EMPTY_HISTORY gilt das Konto als erledigt. */
+  emptyHistory?: Record<string, number>;
+}
 export type SyncStep = 'connect' | 'accounts' | 'transactions' | 'process' | 'categories' | 'done';
 export const SYNC_STEP_LABEL: Record<SyncStep, string> = {
   connect: 'Verbindung wird hergestellt …',
@@ -26,6 +32,8 @@ export const SYNC_STEP_LABEL: Record<SyncStep, string> = {
 export interface SyncResult { added: number; updated: number; accounts: number }
 
 const OVERLAP_DAYS = 14;
+/** Ein Konto ohne Umsätze (z. B. Sparkonto) nicht ewig mit voller Historie (= Freigabe) abfragen. */
+const MAX_EMPTY_HISTORY = 3;
 export const DEFAULT_HISTORY_MONTHS = 12;
 
 export const syncStateKey = (p: ProviderId) => `sync:${p}`;
@@ -47,8 +55,14 @@ export async function runSync(provider: ProviderId, prompter: SyncPrompter, onSt
   const state = await getSyncState(provider, d);
   const end = today();
   const months = (await getSetting<number>('historyMonths', d)) ?? DEFAULT_HISTORY_MONTHS;
-  const from = state.historyDone && state.lastSyncDate ? addDays(state.lastSyncDate, -OVERLAP_DAYS) : addMonthsToDay(end, -months);
+  const historyFrom = addMonthsToDay(end, -months);
+  const recentFrom = state.historyDone && state.lastSyncDate ? addDays(state.lastSyncDate, -OVERLAP_DAYS) : historyFrom;
+  // Alter Stand (vor historyAccounts): alle Konten galten mit historyDone als erledigt.
+  const doneAccounts = new Set(state.historyAccounts ?? []);
+  const needsHistory = (id: string) => !state.historyDone || (state.historyAccounts !== undefined && !doneAccounts.has(id));
+  const emptyHistory = { ...(state.emptyHistory ?? {}) };
   const res: SyncResult = { added: 0, updated: 0, accounts: 0 };
+  let loaded: string[] = [];
   try {
     onStep('connect');
     const session = await p.open(prompter);
@@ -74,8 +88,18 @@ export async function runSync(provider: ProviderId, prompter: SyncPrompter, onSt
 
       onStep('transactions');
       const fetched = [];
-      for (const a of rows) fetched.push({ a, list: await session.getTransactions(a.externalId, from, end) });
+      for (const a of rows) {
+        const full = needsHistory(a.id);
+        const list = await session.getTransactions(a.externalId, full ? historyFrom : recentFrom, end);
+        fetched.push({ a, list });
+        if (!full) { doneAccounts.add(a.id); continue; }
+        // Historie gilt erst als da, wenn wirklich Umsätze kamen (oder nach mehreren leeren Versuchen)
+        const tries = (emptyHistory[a.id] ?? 0) + (list.length ? 0 : 1);
+        if (list.length || tries >= MAX_EMPTY_HISTORY) { doneAccounts.add(a.id); delete emptyHistory[a.id]; }
+        else { doneAccounts.delete(a.id); emptyHistory[a.id] = tries; }
+      }
 
+      loaded = fetched.map(({ a, list }) => `${a.name} ${list.length}`);
       onStep('process');
       const ctx = await loadContext(d);
       for (const { a, list } of fetched) {
@@ -88,8 +112,10 @@ export async function runSync(provider: ProviderId, prompter: SyncPrompter, onSt
 
     onStep('categories');
     await refreshRecurring(d, end);
-    await setSetting(syncStateKey(provider), { historyDone: true, lastSyncAt: Date.now(), lastSyncDate: end } satisfies SyncState, d);
-    await d.syncLog.add({ provider, startedAt, finishedAt: Date.now(), ok: true, added: res.added, updated: res.updated, message: res.added ? `${res.added} neue Umsätze` : 'Keine neuen Umsätze' });
+    await setSetting(syncStateKey(provider), {
+      historyDone: true, lastSyncAt: Date.now(), lastSyncDate: end, historyAccounts: [...doneAccounts], emptyHistory
+    } satisfies SyncState, d);
+    await d.syncLog.add({ provider, startedAt, finishedAt: Date.now(), ok: true, added: res.added, updated: res.updated, message: `${res.added ? `${res.added} neue Umsätze` : 'Keine neuen Umsätze'} · von der Bank: ${loaded.join(', ')}` });
     onStep('done');
     return res;
   } catch (e) {
@@ -103,7 +129,7 @@ export async function runSync(provider: ProviderId, prompter: SyncPrompter, onSt
 /** Historie erneut vollständig laden (eigene Änderungen bleiben). */
 export async function resetHistory(provider: ProviderId, d: MyMoneyDB = mainDb) {
   const s = await getSyncState(provider, d);
-  await setSetting(syncStateKey(provider), { ...s, historyDone: false }, d);
+  await setSetting(syncStateKey(provider), { ...s, historyDone: false, historyAccounts: [], emptyHistory: {} }, d);
 }
 
 /** Alle Daten eines Anbieters entfernen (z. B. Demo-Daten löschen). */

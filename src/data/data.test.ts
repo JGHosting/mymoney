@@ -101,3 +101,46 @@ describe('Backup', () => {
     expect(checkBackup('{"app":"basislager"}').fatal).toMatch(/kein Backup/);
   });
 });
+
+describe('Historie pro Konto', () => {
+  it('holt die volle Historie erneut, wenn ein Konto beim ersten Mal leer blieb', async () => {
+    const d = await freshDb('t-history-per-account');
+    const calls: { ext: string; from: string }[] = [];
+    let giroEmpty = true;
+    const tx = (day: string, amount: number) => ({ bookingDate: day, amount, currency: 'EUR', purpose: `Umsatz ${day}` });
+    setProvider({
+      id: 'fints', label: 'Test',
+      open: async () => ({
+        getAccounts: async () => [
+          { externalId: 'GIRO', name: 'Girokonto', bankName: 'VR', type: 'giro', currency: 'EUR' },
+          { externalId: 'SPAR', name: 'Sparkonto', bankName: 'VR', type: 'savings', currency: 'EUR' }
+        ],
+        getBalance: async () => ({ balance: 0, at: Date.now() }),
+        getTransactions: async (ext, from) => {
+          calls.push({ ext, from });
+          if (ext === 'SPAR') return [tx('2026-01-02', 100)];
+          return giroEmpty ? [] : [tx('2026-02-03', -500), tx('2026-09-01', -700)];
+        },
+        close: async () => undefined
+      })
+    });
+    await setActiveProviders(['fints'], d);
+    await runSync('fints', prompter, () => undefined, d);
+    const firstFrom = calls[0]!.from;
+    expect(calls.every(c => c.from === firstFrom)).toBe(true);
+
+    // Zweiter Sync: Girokonto bekommt erneut die volle Historie, Sparkonto nur die letzten Tage
+    calls.length = 0; giroEmpty = false;
+    const r = await runSync('fints', prompter, () => undefined, d);
+    expect(calls.find(c => c.ext === 'GIRO')!.from).toBe(firstFrom);
+    expect(calls.find(c => c.ext === 'SPAR')!.from > firstFrom).toBe(true);
+    expect(r.added).toBe(2);
+    const log = (await d.syncLog.toArray()).at(-1)!;
+    expect(log.message).toContain('Girokonto 2');
+
+    // Dritter Sync: beide Konten erledigt
+    calls.length = 0;
+    await runSync('fints', prompter, () => undefined, d);
+    expect(calls.every(c => c.from > firstFrom)).toBe(true);
+  });
+});

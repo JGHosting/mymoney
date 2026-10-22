@@ -12,6 +12,7 @@ import type { BankAccountData, BankBalance, BankTransactionData, TanChallenge } 
 import { BridgeError } from './types.js';
 import { checkAnswers, externalIdOf, mapAccount, mapBalance, mapStatements } from './mapping.js';
 import type { InfoStore, Saved } from './state.js';
+import { applyLibFixes, StatementParseError } from './libfixes.js';
 export type { InfoStore, Saved } from './state.js';
 
 /** Teilmenge von FinTSClient, die wir nutzen (für Tests austauschbar). */
@@ -27,9 +28,11 @@ export interface FinTSLike {
   synchronizeWithTan(ref: string, tan?: string): Promise<SynchronizeResponse>;
   getAccountBalance(a: BankAccount): Promise<AccountBalanceResponse>;
   getAccountBalanceWithTan(ref: string, tan?: string): Promise<AccountBalanceResponse>;
-  getAccountStatements(a: BankAccount, from?: Date, to?: Date): Promise<StatementResponse>;
+  getAccountStatements(a: BankAccount, from?: Date, to?: Date, preferCamt?: boolean): Promise<StatementResponse>;
   getAccountStatementsWithTan(ref: string, tan?: string): Promise<StatementResponse>;
 }
+
+applyLibFixes();
 
 export type ClientFactory = (cfg: BridgeConfig, pin: string, saved?: Saved) => FinTSLike;
 
@@ -51,17 +54,23 @@ async function guard<T>(fn: () => Promise<T>): Promise<T> {
   try { return await fn(); }
   catch (e) {
     if (e instanceof BridgeError) throw e;
+    if (e instanceof StatementParseError) throw e;
     const msg = e instanceof Error ? e.message : String(e);
     if (/fetch failed|ENOTFOUND|ECONN|ETIMEDOUT|EAI_AGAIN|network|socket/i.test(msg)) throw new BridgeError('unreachable', 504, msg.slice(0, 200));
     throw new BridgeError('fints', 502, msg.slice(0, 200));
   }
 }
 
+/** Lesefehler als verständlichen Brückenfehler weitergeben. */
+const toBridge = (e: unknown) => e instanceof StatementParseError ? new BridgeError('fints', 502, e.message) : e;
+
 export class BankSession {
   pending: Pending | null = null;
   private results = new Map<string, BankTransactionData[]>();
   private balances = new Map<string, BankBalance>();
   lastUsed = Date.now();
+  /** CAMT bevorzugen; nach einem Lesefehler für den Rest der Sitzung MT940. */
+  preferCamt = true;
 
   constructor(private cfg: BridgeConfig, private client: FinTSLike, private bankName: string, private store: InfoStore) {}
 
@@ -130,7 +139,14 @@ export class BankSession {
       if (r.balance) this.balances.set(p.ext, mapBalance(r.balance));
       this.pending = null; return { ok: true };
     }
-    const r = await guard(() => this.client.getAccountStatementsWithTan(p.ref, t));
+    let r: StatementResponse;
+    try { r = await guard(() => this.client.getAccountStatementsWithTan(p.ref, t)); }
+    catch (e) {
+      if (!(e instanceof StatementParseError) || !this.preferCamt) throw toBridge(e);
+      // CAMT unlesbar → beim nächsten Abruf MT940 verwenden (die App fragt nach "ok" erneut nach)
+      this.preferCamt = false; this.pending = null;
+      return { ok: true };
+    }
     checkAnswers(r.bankAnswers);
     if (r.requiresTan) { this.pending = { ...p, ref: r.tanReference ?? p.ref }; return { pending: true }; }
     this.results.set(p.key, mapStatements(r.statements ?? [], p.from, p.to));
@@ -172,7 +188,14 @@ export class BankSession {
     const cached = this.results.get(key);
     if (cached) return cached;
     const [fy, fm, fd] = from.split('-').map(Number), [ty, tm, td] = to.split('-').map(Number);
-    const r = await guard(() => this.client.getAccountStatements(this.find(ext), new Date(fy!, fm! - 1, fd!), new Date(ty!, tm! - 1, td!)));
+    const fetch = () => guard(() => this.client.getAccountStatements(this.find(ext), new Date(fy!, fm! - 1, fd!), new Date(ty!, tm! - 1, td!), this.preferCamt));
+    let r: StatementResponse;
+    try { r = await fetch(); }
+    catch (e) {
+      if (!(e instanceof StatementParseError) || !this.preferCamt) throw toBridge(e);
+      this.preferCamt = false;   // CAMT unlesbar → MT940
+      try { r = await fetch(); } catch (e2) { throw toBridge(e2); }
+    }
     this.lastChallenge = r.tanChallenge ?? '';
     this.afterResponse(r, { kind: 'statements', ref: '', key, from, to });
     if (r.requiresTan) return { tan: this.challenge()! };

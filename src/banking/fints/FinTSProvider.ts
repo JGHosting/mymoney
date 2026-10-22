@@ -118,7 +118,9 @@ export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | unde
           const path = `/api/fints/sessions/${sid}/accounts/${encodeURIComponent(ext)}/transactions?from=${from}&to=${to}`;
           // Umsatzabruf älter als 90 Tage verlangt bei PSD2 oft eine zusätzliche TAN
           let r = await call<BankTransactionData[] | { tan: TanChallenge }>('GET', path, undefined, true);
-          if (!Array.isArray(r)) { await handleTan(r.tan); r = await call<BankTransactionData[]>('GET', path, undefined, true); }
+          // Nach einer Freigabe kann die Brücke erneut eine verlangen (z. B. Wechsel CAMT → MT940)
+          for (let i = 0; !Array.isArray(r) && i < 2; i++) { await handleTan(r.tan); r = await call<BankTransactionData[] | { tan: TanChallenge }>('GET', path, undefined, true); }
+          if (!Array.isArray(r)) throw new BankError('other', undefined, 'Die Bank verlangt wiederholt eine Freigabe.');
           return r as BankTransactionData[];
         },
         async close() {
