@@ -17,7 +17,7 @@ export const SCHEMA_VERSION = 1;
 export const BACKUP_TABLES = ['settings', 'accounts', 'transactions', 'categories', 'rules', 'budgets', 'recurring', 'merchants', 'syncLog'] as const;
 export const EXCLUDED_TABLES = ['snapshots'];
 /** Einstellungen, die nicht ins Backup gehören (Geheimnisse, gerätespezifisch). */
-export const EXCLUDED_SETTINGS = new Set(['fintsBridge']);
+export const EXCLUDED_SETTINGS = new Set(['fintsBridge', 'fintsState']);
 
 export type TableName = typeof BACKUP_TABLES[number];
 export interface BackupTables {

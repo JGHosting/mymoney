@@ -3,14 +3,16 @@ import { mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildServer } from './server.js';
-import { InfoStore, type FinTSLike, type ClientFactory } from './bank.js';
+import type { FinTSLike, ClientFactory, Saved } from './bank.js';
+import { StateCipher } from './state.js';
+import { existsSync } from 'node:fs';
 import { mapTransaction, checkAnswers } from './mapping.js';
 import { loadConfig, type BridgeConfig } from './config.js';
 
 const TOKEN = 'x'.repeat(40);
 const cfg: BridgeConfig = {
   fintsUrl: 'https://bank.example/fints', blz: '72069155', user: 'nutzer', productId: 'TESTID', productVersion: '1.0',
-  token: TOKEN, allowedOrigins: ['https://jghosting.github.io'], host: '127.0.0.1', port: 0, dataDir: ''
+  token: TOKEN, allowedOrigins: ['https://jghosting.github.io'], host: '127.0.0.1', port: 0, dataDir: '', stateStorage: 'file'
 };
 const auth = { authorization: `Bearer ${TOKEN}` };
 const ok = { success: true, requiresTan: false, bankAnswers: [{ code: 20, text: 'OK' }], bankingInformationUpdated: false, dialogId: 'd' };
@@ -117,6 +119,62 @@ describe('FinTS-Brücke', () => {
   });
 });
 
+describe('Zustand in der App (STATE_STORAGE=client, z. B. Cloud Run)', () => {
+  const client: BridgeConfig = { ...cfg, stateStorage: 'client' };
+
+  it('Verschlüsselung: nur mit gleichem Schlüssel und gleicher Bankverbindung lesbar', () => {
+    const c = new StateCipher(TOKEN, '72069155|nutzer');
+    const saved = { info: { systemId: 'SYS1' } as never, tanMethodId: 946 } satisfies Saved;
+    const sealed = c.seal(saved);
+    expect(sealed).not.toContain('SYS1');
+    expect(c.open(sealed)).toEqual(saved);
+    expect(new StateCipher('y'.repeat(40), '72069155|nutzer').open(sealed)).toBeUndefined();
+    expect(new StateCipher(TOKEN, '72069155|andere').open(sealed)).toBeUndefined();
+    const parts = sealed.split('.');
+    const bad = Buffer.from(parts[2]!, 'base64url'); bad[0] = bad[0]! ^ 1;
+    expect(c.open(`${parts[0]}.${parts[1]}.${bad.toString('base64url')}`)).toBeUndefined();
+    expect(c.open('Müll')).toBeUndefined();
+    expect(c.open(undefined)).toBeUndefined();
+  });
+
+  it('schreibt nichts auf die Festplatte und gibt den Zustand beim Beenden zurück', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bridge-client-'));
+    const seen: (Saved | undefined)[] = [];
+    const inner = fakeBank({ polls: 0 });
+    const factory: ClientFactory = (c, pin, saved) => { seen.push(saved); return inner(c, pin, saved); };
+    const app = buildServer({ ...client, dataDir: dir }, { factory });
+
+    const first = (await app.inject({ method: 'POST', url: '/api/fints/sessions', headers: auth, payload: { pin: '9753' } })).json();
+    const end = (await app.inject({ method: 'DELETE', url: `/api/fints/sessions/${first.sessionId}`, headers: auth })).json();
+    expect(end.ok).toBe(true);
+    expect(typeof end.state).toBe('string');
+    expect(end.state).not.toContain('9753');
+    expect(existsSync(join(dir, 'banking-info.json'))).toBe(false);
+
+    // Nächster Abruf mit dem Zustand aus der App: Bank erkennt uns wieder (gespeichertes TAN-Verfahren)
+    const second = (await app.inject({ method: 'POST', url: '/api/fints/sessions', headers: auth, payload: { pin: '9753', state: end.state } })).json();
+    expect(seen[0]).toBeUndefined();
+    expect(seen[1]?.tanMethodId).toBe(946);
+    // Unveränderter Zustand wird nicht erneut zurückgegeben
+    expect((await app.inject({ method: 'DELETE', url: `/api/fints/sessions/${second.sessionId}`, headers: auth })).json()).toEqual({ ok: true });
+
+    // Ungültiger Zustand → wie neue Verbindung, kein Fehler
+    const third = await app.inject({ method: 'POST', url: '/api/fints/sessions', headers: auth, payload: { pin: '9753', state: 'v1.kaputt.kaputt' } });
+    expect(third.statusCode).toBe(200);
+    expect(seen[2]).toBeUndefined();
+    await app.close();
+  });
+
+  it('akzeptiert große Bankparameter nur beim Sitzungsstart', async () => {
+    const app = buildServer(client, { factory: fakeBank({ polls: 0 }) });
+    const big = 'v1.' + 'a'.repeat(200_000) + '.b';
+    expect((await app.inject({ method: 'POST', url: '/api/fints/sessions', headers: auth, payload: { pin: '9753', state: big } })).statusCode).toBe(200);
+    const { sessionId } = (await app.inject({ method: 'POST', url: '/api/fints/sessions', headers: auth, payload: { pin: '9753' } })).json();
+    expect((await app.inject({ method: 'POST', url: `/api/fints/sessions/${sessionId}/tan`, headers: auth, payload: { tan: 'x'.repeat(10_000) } })).statusCode).toBe(413);
+    await app.close();
+  });
+});
+
 describe('Umwandlung & Konfiguration', () => {
   it('Beträge in Cent, keine unsinnigen IBANs', () => {
     const t = mapTransaction({ entryDate: new Date(2026, 0, 31), valueDate: new Date(2026, 1, 1), amount: -0.29, remoteAccountNumber: '0000123', purpose: '  REWE  Markt ', fundsCode: '', transactionType: '', customerReference: '', bankReference: '' } as never, 'EUR');
@@ -130,7 +188,12 @@ describe('Umwandlung & Konfiguration', () => {
   it('Konfiguration verlangt alle Werte und einen langen Schlüssel', () => {
     expect(() => loadConfig({})).toThrow(/FINTS_URL/);
     expect(() => loadConfig({ FINTS_URL: 'https://x', FINTS_BLZ: '1', FINTS_USER: 'u', FINTS_PRODUCT_ID: 'p', BRIDGE_TOKEN: 'kurz' })).toThrow(/zu kurz/);
-    expect(loadConfig({ FINTS_URL: 'https://x', FINTS_BLZ: '1', FINTS_USER: 'u', FINTS_PRODUCT_ID: 'p', BRIDGE_TOKEN: TOKEN, ALLOWED_ORIGIN: 'https://a.io/, https://b.io' }).allowedOrigins).toEqual(['https://a.io', 'https://b.io']);
+    const base = { FINTS_URL: 'https://x', FINTS_BLZ: '1', FINTS_USER: 'u', FINTS_PRODUCT_ID: 'p', BRIDGE_TOKEN: TOKEN };
+    expect(loadConfig({ ...base, ALLOWED_ORIGIN: 'https://a.io/, https://b.io' }).allowedOrigins).toEqual(['https://a.io', 'https://b.io']);
+    expect(loadConfig(base).stateStorage).toBe('file');
+    expect(loadConfig({ ...base, STATE_STORAGE: 'client' }).stateStorage).toBe('client');
+    expect(() => loadConfig({ ...base, STATE_STORAGE: 'cloud' })).toThrow(/STATE_STORAGE/);
+    expect(() => loadConfig({ ...base, STATE_KEY: 'kurz' })).toThrow(/STATE_KEY/);
   });
 });
 
@@ -140,9 +203,10 @@ import { createFinTSProvider } from '../../src/banking/fints/FinTSProvider.js';
 describe('App ↔ Brücke', () => {
   it('Provider der App lädt Konten, Saldo und Umsätze inkl. SecureGo-Freigabe', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'bridge-e2e-'));
-    const app = buildServer({ ...cfg, dataDir: dir }, { factory: fakeBank({ polls: 0 }) });
+    const app = buildServer({ ...cfg, dataDir: dir, stateStorage: 'client' }, { factory: fakeBank({ polls: 0 }) });
     const addr = await app.listen({ host: '127.0.0.1', port: 0 });
-    const provider = createFinTSProvider(async () => ({ url: addr, token: TOKEN }));
+    let stored: string | undefined;
+    const provider = createFinTSProvider(async () => ({ url: addr, token: TOKEN }), { load: async () => stored, save: async s => { stored = s; } });
     const prompts: string[] = [];
     const session = await provider.open({
       askPin: async () => { prompts.push('pin'); return '9753'; },
@@ -157,6 +221,8 @@ describe('App ↔ Brücke', () => {
     expect(txs[0]).toMatchObject({ amount: -110000, purpose: 'Miete 10/2026' });
     expect(prompts).toEqual(['pin', 'decoupled', 'close']);
     await session.close();
+    expect(stored).toMatch(/^v1\./);
+    expect(existsSync(join(dir, 'banking-info.json'))).toBe(false);
     await app.close();
   }, 20000);
 });

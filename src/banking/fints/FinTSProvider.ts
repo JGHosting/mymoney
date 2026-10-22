@@ -5,31 +5,35 @@
  * FinTS-Produkt-ID gehört nicht in öffentlichen Code). Deshalb läuft die Bankkommunikation über eine
  * kleine, zustandslose "FinTS-Brücke" auf eigener Infrastruktur (server/, Phase 5):
  *
- *   App ──HTTPS──▶ FinTS-Brücke (eigener Rechner/VPS) ──FinTS 3.0──▶ VR Bank (Atruvia)
+ *   App ──HTTPS──▶ FinTS-Brücke (Cloud Run oder eigener Server) ──FinTS 3.0──▶ VR Bank (Atruvia)
  *
  * - Die Brücke speichert keine Umsätze und keine PIN. Sie reicht nur durch.
  * - Die PIN wird bei jedem Sync abgefragt und nur für diesen einen Abruf übertragen.
  * - Die Brücke ist mit einem eigenen Zugangsschlüssel geschützt (nicht im Backup, nicht im Repo).
  * - Bankleitzahl, Anmeldename und FinTS-URL liegen in der .env der Brücke (FINTS_BLZ, FINTS_USER, FINTS_URL).
+ * - Läuft die Brücke ohne eigene Festplatte (STATE_STORAGE=client, z. B. Cloud Run), hält die App den
+ *   Verbindungszustand der Bank (BPD/UPD/System-ID) – von der Brücke verschlüsselt, für die App unlesbar.
  *
  * API-Vertrag der Brücke (JSON):
- *   POST   /api/fints/sessions              { pin }            → { sessionId } | { sessionId, tan: TanChallenge }
+ *   POST   /api/fints/sessions              { pin, state? }    → { sessionId } | { sessionId, tan: TanChallenge }
  *   POST   /api/fints/sessions/:id/tan      { tan? }           → { ok: true } | { pending: true }
  *   GET    /api/fints/sessions/:id/accounts                    → BankAccountData[]
  *   GET    /api/fints/sessions/:id/accounts/:ext/balance       → BankBalance | { tan }
  *   GET    /api/fints/sessions/:id/accounts/:ext/transactions?from&to  → BankTransactionData[] | { tan }
- *   DELETE /api/fints/sessions/:id
+ *   DELETE /api/fints/sessions/:id                             → { ok: true, state? }
  * Fehler: { error: BankErrorKind, detail? } mit HTTP 4xx/5xx.
  */
 import type { BankAccountData, BankBalance, BankingProvider, BankTransactionData, ProviderSession, SyncPrompter, TanChallenge } from '../types';
 import { BankError, type BankErrorKind } from '../types';
 
 export interface BridgeConfig { url: string; token: string }
+/** Ablage für den verschlüsselten Verbindungszustand (undurchsichtige Zeichenkette der Brücke). */
+export interface BridgeStateStore { load(): Promise<string | undefined>; save(state: string): Promise<void> }
 
 const DECOUPLED_POLL_MS = 2500;
 const DECOUPLED_TIMEOUT_MS = 5 * 60 * 1000;
 
-export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | undefined>): BankingProvider {
+export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | undefined>, stateStore?: BridgeStateStore): BankingProvider {
   return {
     id: 'fints',
     label: 'VR Bank (FinTS)',
@@ -55,7 +59,8 @@ export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | unde
 
       const pin = await prompter.askPin('VR Bank');
       if (pin == null) throw new BankError('cancelled');
-      const start = await call<{ sessionId: string; tan?: TanChallenge }>('POST', '/api/fints/sessions', { pin });
+      const state = await stateStore?.load().catch(() => undefined);
+      const start = await call<{ sessionId: string; tan?: TanChallenge }>('POST', '/api/fints/sessions', state ? { pin, state } : { pin });
       const sid = encodeURIComponent(start.sessionId);
 
       /** TAN-Schritt: Eingabe (chipTAN) oder Warten auf Freigabe in der SecureGo-plus-App. */
@@ -96,7 +101,10 @@ export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | unde
           if (!Array.isArray(r)) { await handleTan(r.tan); r = await call<BankTransactionData[]>('GET', path); }
           return r as BankTransactionData[];
         },
-        async close() { await call('DELETE', `/api/fints/sessions/${sid}`).catch(() => undefined); }
+        async close() {
+          const r = await call<{ ok?: boolean; state?: string }>('DELETE', `/api/fints/sessions/${sid}`).catch(() => undefined);
+          if (r?.state && stateStore) await stateStore.save(r.state).catch(() => undefined);
+        }
       };
     }
   };

@@ -1,0 +1,63 @@
+# Stellt die FinTS-Brücke auf Google Cloud Run bereit (Frankfurt, 0–1 Instanzen).
+# Einmalige Einrichtung: server/deploy/cloudrun-setup.sh, danach die Variablen GCP_PROJECT,
+# GCP_WIF_PROVIDER und GCP_DEPLOY_SA im Repo setzen. Ohne diese Variablen wird der Job übersprungen.
+# Läuft bei Änderungen an server/, von Hand und monatlich (frisches Node-Basisimage = Sicherheitsupdates).
+name: Bridge Cloud Run
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/bridge-cloudrun.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 3 * *'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: bridge-cloudrun
+  cancel-in-progress: false
+env:
+  REGION: europe-west3
+  SERVICE: mymoney-bridge
+jobs:
+  deploy:
+    if: vars.GCP_PROJECT != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Brücke prüfen
+        working-directory: server
+        run: npm ci && npm run typecheck && npm test
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Image bauen und hochladen
+        run: |
+          IMAGE="$REGION-docker.pkg.dev/${{ vars.GCP_PROJECT }}/mymoney/bridge:${GITHUB_SHA::12}-${GITHUB_RUN_NUMBER}"
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build --pull -t "$IMAGE" server
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Bereitstellen
+        run: |
+          gcloud run deploy "$SERVICE" --project "${{ vars.GCP_PROJECT }}" --region "$REGION" --image "$IMAGE" \
+            --service-account "$SERVICE@${{ vars.GCP_PROJECT }}.iam.gserviceaccount.com" \
+            --port 8787 --cpu 1 --memory 512Mi --cpu-boost --concurrency 10 --timeout 60 \
+            --min-instances 0 --max-instances 1 \
+            --set-env-vars "STATE_STORAGE=client,ALLOWED_ORIGIN=https://jghosting.github.io,FINTS_URL=${{ vars.FINTS_URL || 'https://fints1.atruvia.de/cgi-bin/hbciservlet' }}" \
+            --set-secrets "FINTS_BLZ=fints-blz:latest,FINTS_USER=fints-user:latest,FINTS_PRODUCT_ID=fints-product-id:latest,BRIDGE_TOKEN=bridge-token:latest" \
+            --quiet
+      - name: Läuft die Brücke und verlangt den Schlüssel?
+        run: |
+          URL="$(gcloud run services describe "$SERVICE" --project "${{ vars.GCP_PROJECT }}" --region "$REGION" --format='value(status.url)')"
+          code="$(curl -s -o /dev/null -w '%{http_code}' --retry 5 --retry-all-errors "$URL/api/health")"
+          echo "Antwort ohne Schlüssel: $code (erwartet 401)"
+          test "$code" = 401
+          echo "### Brücke bereit: $URL" >> "$GITHUB_STEP_SUMMARY"

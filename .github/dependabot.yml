@@ -1,0 +1,19 @@
+# Wöchentliche Sicherheits- und Versionsupdates als Pull Request (App, Brücke, Basisimage, Actions).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      app: { patterns: ['*'], update-types: [minor, patch] }
+  - package-ecosystem: npm
+    directory: /server
+    schedule: { interval: weekly }
+    groups:
+      bridge: { patterns: ['*'], update-types: [minor, patch] }
+  - package-ecosystem: docker
+    directory: /server
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }

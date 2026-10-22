@@ -13,6 +13,10 @@ export interface BridgeConfig {
   host: string;
   port: number;
   dataDir: string;
+  /** "file": Zustand auf der Festplatte (eigener Server); "client": verschlüsselt in der App (Cloud Run & Co.) */
+  stateStorage: 'file' | 'client';
+  /** Optionaler eigener Schlüssel für den Zustand in der App; sonst aus BRIDGE_TOKEN abgeleitet */
+  stateKey?: string;
   tanMethodId?: number;
   tanMedia?: string;
 }
@@ -31,11 +35,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
     host: env.HOST?.trim() || '127.0.0.1',
     port: Number(env.PORT || 8787),
     dataDir: env.DATA_DIR?.trim() || './data',
+    stateStorage: env.STATE_STORAGE?.trim() === 'client' ? 'client' : 'file',
+    stateKey: env.STATE_KEY?.trim() || undefined,
     tanMethodId: env.FINTS_TAN_METHOD ? Number(env.FINTS_TAN_METHOD) : undefined,
     tanMedia: env.FINTS_TAN_MEDIA?.trim() || undefined
   };
   if (missing.length) throw new Error(`Fehlende Umgebungsvariablen: ${missing.join(', ')}`);
   if (cfg.token.length < 32) throw new Error('BRIDGE_TOKEN ist zu kurz (mindestens 32 Zeichen, z. B. `openssl rand -hex 32`).');
+  if (env.STATE_STORAGE && !['file', 'client'].includes(env.STATE_STORAGE.trim())) throw new Error('STATE_STORAGE muss "file" oder "client" sein.');
+  if (cfg.stateKey && cfg.stateKey.length < 32) throw new Error('STATE_KEY ist zu kurz (mindestens 32 Zeichen).');
   if (!/^https:\/\//.test(cfg.fintsUrl)) throw new Error('FINTS_URL muss mit https:// beginnen.');
   return cfg;
 }

@@ -2,17 +2,17 @@
  * Eine Bank-Sitzung pro Sync. Hält den FinTS-Client (inkl. PIN) nur im Arbeitsspeicher und nur so lange,
  * bis die App die Sitzung schließt oder sie nach SESSION_TTL abläuft.
  *
- * Gespeichert wird auf der Festplatte ausschließlich die "Banking Information" (BPD/UPD/System-ID),
- * damit die Bank uns beim nächsten Mal wiedererkennt – keine PIN, keine Umsätze.
+ * Gespeichert wird ausschließlich die "Banking Information" (BPD/UPD/System-ID), damit die Bank uns beim
+ * nächsten Mal wiedererkennt – keine PIN, keine Umsätze. Wo, entscheidet der InfoStore (siehe state.ts).
  */
-import { mkdirSync, readFileSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { FinTSClient, FinTSConfig } from 'lib-fints';
 import type { AccountBalanceResponse, BankAccount, BankingInformation, ClientResponse, StatementResponse, SynchronizeResponse } from 'lib-fints';
 import type { BridgeConfig } from './config.js';
 import type { BankAccountData, BankBalance, BankTransactionData, TanChallenge } from './types.js';
 import { BridgeError } from './types.js';
 import { checkAnswers, externalIdOf, mapAccount, mapBalance, mapStatements } from './mapping.js';
+import type { InfoStore, Saved } from './state.js';
+export type { InfoStore, Saved } from './state.js';
 
 /** Teilmenge von FinTSClient, die wir nutzen (für Tests austauschbar). */
 export interface FinTSLike {
@@ -31,7 +31,6 @@ export interface FinTSLike {
   getAccountStatementsWithTan(ref: string, tan?: string): Promise<StatementResponse>;
 }
 
-interface Saved { info: BankingInformation; tanMethodId?: number; tanMedia?: string }
 export type ClientFactory = (cfg: BridgeConfig, pin: string, saved?: Saved) => FinTSLike;
 
 export const defaultFactory: ClientFactory = (cfg, pin, saved) => {
@@ -186,22 +185,5 @@ export class BankSession {
   private persist() {
     const m = this.client.config.selectedTanMethod;
     this.store.save({ info: this.client.config.bankingInformation, ...(m ? { tanMethodId: m.id } : {}), ...(this.cfg.tanMedia ? { tanMedia: this.cfg.tanMedia } : {}) });
-  }
-}
-
-/** Ablage der Banking Information (keine Geheimnisse) mit Dateirechten 600. */
-export class InfoStore {
-  private file: string;
-  constructor(dir: string) {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    this.file = join(dir, 'banking-info.json');
-  }
-  load(): Saved | undefined {
-    if (!existsSync(this.file)) return undefined;
-    try { return JSON.parse(readFileSync(this.file, 'utf8')) as Saved; } catch { return undefined; }
-  }
-  save(s: Saved) {
-    writeFileSync(this.file, JSON.stringify(s), { mode: 0o600 });
-    chmodSync(this.file, 0o600);
   }
 }

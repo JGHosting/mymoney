@@ -1,5 +1,5 @@
-# Variante A (VPS mit eigener Domain): docker compose --profile https up -d
-# Variante B (Raspberry Pi + Tailscale):  docker compose up -d   und danach  tailscale serve --bg 8787
+# Eigener Server mit Domain (README Variante B): docker compose --profile https up -d
+# Nur im Heimnetz bzw. Tailnet: docker compose up -d   und danach  tailscale serve --bg 8787
 services:
   bridge:
     build: .
