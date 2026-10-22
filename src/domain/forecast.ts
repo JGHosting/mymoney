@@ -1,6 +1,7 @@
 /** "Wie viel kann ich noch ausgeben?" – Verfügbar abzüglich der in diesem Monat noch erwarteten Fixkosten. */
 import type { Recurring } from '../core/db';
 import { monthEnd, monthStart } from '../core/dates';
+import { effectiveDay } from './stats';
 
 export interface Pending { recurring: Recurring; due: string }
 
@@ -18,9 +19,13 @@ export function freeToSpend(income: number, expense: number, pending: Pending[])
 }
 
 /** Im Monat noch erwartete Einnahmen (z. B. Gehalt) – nur echte Einkommen, keine Umbuchungen. */
-export function expectedIncomeInMonth(recurring: Recurring[], month: string): Pending[] {
+export function expectedIncomeInMonth(recurring: Recurring[], month: string, incomeShiftDay?: number): Pending[] {
   const from = monthStart(month), to = monthEnd(month);
   return recurring
-    .filter(r => r.status !== 'dismissed' && r.amount > 0 && r.categoryId.startsWith('einkommen') && r.nextDate >= from && r.nextDate <= to)
+    .filter(r => {
+      if (r.status === 'dismissed' || r.amount <= 0 || !r.categoryId.startsWith('einkommen')) return false;
+      const d = effectiveDay(r.nextDate, 'income', r.categoryId, incomeShiftDay);   // Gehalt am 28. zählt ggf. erst im Folgemonat
+      return d >= from && d <= to;
+    })
     .map(r => ({ recurring: r, due: r.nextDate }));
 }

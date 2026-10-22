@@ -20,11 +20,19 @@ export const useRecurring = () => useLiveQuery(() => db.recurring.toArray(), [])
 export const useBudgets = () => useLiveQuery(() => db.budgets.toArray(), []);
 export const useSetting = <T,>(key: string) => useLiveQuery(async () => ({ v: (await db.settings.get(key))?.value as T | undefined }), [key]);
 
+/** Einnahmen ab diesem Tag zählen zum Folgemonat (0 = aus). undefined, solange noch geladen wird. */
+export const INCOME_SHIFT_KEY = 'incomeShiftDay';
+export function useIncomeShiftDay(): number | undefined {
+  const s = useSetting<number>(INCOME_SHIFT_KEY);
+  return s ? (s.v ?? 0) : undefined;
+}
+
 /** Einträge aller Umsätze (für Auswertungen) – einmal berechnet, von allen Ansichten geteilt. */
 export function useEntries(): Entry[] | undefined {
   const txs = useAllTransactions();
   const { map, ready } = useCategories();
-  return useMemo(() => (txs && ready ? toEntries(txs, map) : undefined), [txs, map, ready]);
+  const shift = useIncomeShiftDay();
+  return useMemo(() => (txs && ready && shift !== undefined ? toEntries(txs, map, shift) : undefined), [txs, map, ready, shift]);
 }
 
 export interface MonthData { month: string; running: boolean; day: number; cur: Summary; prevSame: Summary; prevFull: Summary; budgets: BudgetStatus[] }

@@ -7,16 +7,29 @@ import type { Category, Transaction, TxKind } from '../core/db';
 import { addMonths, daysInMonth, monthEnd, monthOf, monthStart } from '../core/dates';
 import { rootOf } from './categories';
 
-export interface Entry { txId: string; day: string; categoryId: string; root: string; amount: number; kind: TxKind }
+export interface Entry { txId: string; /** Tag, für den der Eintrag zählt (bei verschobenen Einnahmen der 1. des Folgemonats) */ day: string; categoryId: string; root: string; amount: number; kind: TxKind }
 
-export function toEntries(txs: Transaction[], cats: Map<string, Category>): Entry[] {
+/** Kategorien, die nie verschoben werden (Erstattungen gehören zum Monat der Ausgabe). */
+const NO_SHIFT = new Set(['einkommen.erstattungen']);
+
+/**
+ * Monat, für den ein Eintrag zählt: Einnahmen ab dem Tag `incomeShiftDay` (z. B. Gehalt am 28.)
+ * zählen zum Folgemonat und werden auf dessen 1. gelegt. 0/undefined = aus.
+ */
+export function effectiveDay(day: string, kind: TxKind, categoryId: string, incomeShiftDay?: number): string {
+  if (!incomeShiftDay || kind !== 'income' || NO_SHIFT.has(categoryId)) return day;
+  if (Number(day.slice(8)) < incomeShiftDay) return day;
+  return monthStart(addMonths(monthOf(day), 1));
+}
+
+export function toEntries(txs: Transaction[], cats: Map<string, Category>, incomeShiftDay?: number): Entry[] {
   const out: Entry[] = [];
   for (const t of txs) {
     if (t.ignored) continue;
     const parts = t.splits?.length ? t.splits : [{ categoryId: t.categoryId, amount: t.amount }];
     for (const p of parts) {
       const kind = cats.get(p.categoryId)?.kind ?? t.kind;
-      out.push({ txId: t.id, day: t.bookingDate, categoryId: p.categoryId, root: rootOf(p.categoryId, cats), amount: p.amount, kind });
+      out.push({ txId: t.id, day: effectiveDay(t.bookingDate, kind, p.categoryId, incomeShiftDay), categoryId: p.categoryId, root: rootOf(p.categoryId, cats), amount: p.amount, kind });
     }
   }
   return out;

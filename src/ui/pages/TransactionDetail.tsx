@@ -4,11 +4,12 @@ import { useNavigate, useParams } from 'react-router';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Pencil, Split as SplitIcon, Trash2, Plus } from 'lucide-react';
 import { db, type Interval, type Split, type Transaction } from '../../core/db';
-import { useCategories } from '../hooks/data';
+import { useCategories, useIncomeShiftDay } from '../hooks/data';
 import { BackBar, Button, CategoryIcon, Group, GroupLabel, Row, Toggle, cx } from '../components/ui';
 import { Sheet } from '../components/Sheet';
 import { CategoryPicker } from '../components/CategoryPicker';
-import { fmtDate } from '../../core/dates';
+import { fmtDate, monthName, monthOf } from '../../core/dates';
+import { effectiveDay } from '../../domain/stats';
 import { fmtMoney, parseMoney, splitMoney } from '../../core/money';
 import { setCategory, setIgnored, setNote, renameMerchant, markRecurring, dismissRecurring, setSplits } from '../../data/actions';
 import { INTERVAL_LABEL } from '../../domain/recurring';
@@ -22,6 +23,7 @@ export default function TransactionDetail() {
   const rec = useLiveQuery(() => (tx?.recurringId ? db.recurring.get(tx.recurringId) : undefined), [tx?.recurringId]);
   const similar = useLiveQuery(() => (tx ? db.transactions.where('merchantKey').equals(tx.merchantKey).count() : 0), [tx?.merchantKey]);
   const { map, list } = useCategories();
+  const shiftDay = useIncomeShiftDay();
   const toast = useApp(s => s.showToast);
   const [sheet, setSheet] = useState<null | 'cat' | 'name' | 'rec' | 'split'>(null);
   const [forAll, setForAll] = useState(true);
@@ -84,6 +86,10 @@ export default function TransactionDetail() {
           <div className="mt-0.5 select-text break-words text-[15px]">{tx.purpose || '–'}</div>
         </div>
         {tx.bookingText && <Row title="Buchungsart" value={tx.bookingText} />}
+        {(() => {
+          const eff = effectiveDay(tx.bookingDate, map.get(tx.categoryId)?.kind ?? tx.kind, tx.categoryId, shiftDay);
+          return eff !== tx.bookingDate ? <Row title="Zählt für" value={monthName(monthOf(eff))} /> : null;
+        })()}
         {tx.valueDate && tx.valueDate !== tx.bookingDate && <Row title="Wertstellung" value={fmtDate(tx.valueDate, { day: '2-digit', month: '2-digit', year: 'numeric' })} />}
         {tx.e2eRef && <Row title="End-to-End-Referenz" value={<span className="text-[13px]">{tx.e2eRef}</span>} />}
         {tx.mandateRef && <Row title="Mandatsreferenz" value={<span className="text-[13px]">{tx.mandateRef}</span>} />}

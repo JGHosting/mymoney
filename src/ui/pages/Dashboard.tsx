@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Landmark, FlaskConical, Lightbulb, TrendingDown, TrendingUp, ChevronRight } from 'lucide-react';
-import { useAccounts, useAllTransactions, useCategories, useEntries, useMonth, useRecurring, type MonthData } from '../hooks/data';
+import { useAccounts, useAllTransactions, useCategories, useEntries, useIncomeShiftDay, useMonth, useRecurring, type MonthData } from '../hooks/data';
 import { BigAmount, Button, Card, CategoryIcon, Empty, Section, Skeleton, cx } from '../components/ui';
 import { SyncStatus } from '../components/SyncStatus';
 import { Guilloche } from '../components/Guilloche';
@@ -88,10 +88,11 @@ function BalanceCard() {
 
 function MonthCard({ month, data }: { month: string; data: MonthData }) {
   const recurring = useRecurring();
+  const shiftDay = useIncomeShiftDay();
   const { cur, prevSame, running, day } = data;
   const max = Math.max(cur.income, cur.expense, 1);
   const pending = useMemo(() => (recurring && running ? pendingInMonth(recurring, month).filter(p => p.due >= today()) : []), [recurring, month, running]);
-  const incoming = useMemo(() => (recurring && running ? expectedIncomeInMonth(recurring, month).filter(p => p.due >= today()) : []), [recurring, month, running]);
+  const incoming = useMemo(() => (recurring && running ? expectedIncomeInMonth(recurring, month, shiftDay).filter(p => p.due >= today()) : []), [recurring, month, running, shiftDay]);
   const inSum = incoming.reduce((s, p) => s + p.recurring.amount, 0);
   const outSum = -pending.reduce((s, p) => s + p.recurring.amount, 0);
   const free = freeToSpend(cur.income + inSum, cur.expense, pending);

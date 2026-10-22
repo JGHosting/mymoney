@@ -192,3 +192,15 @@ describe('Geld', () => {
     expect(fmtMoney(1000, { sign: true })).toMatch(/^\+10,00/);
   });
 });
+
+describe('Einnahmen am Monatsende', () => {
+  it('verschiebt Einnahmen ab dem Stichtag in den Folgemonat, Ausgaben und Erstattungen nicht', async () => {
+    const { effectiveDay } = await import('./stats');
+    expect(effectiveDay('2026-10-28', 'income', 'einkommen.gehalt', 25)).toBe('2026-11-01');
+    expect(effectiveDay('2026-12-27', 'income', 'einkommen.sonstiges', 25)).toBe('2027-01-01');
+    expect(effectiveDay('2026-10-24', 'income', 'einkommen.gehalt', 25)).toBe('2026-10-24');
+    expect(effectiveDay('2026-10-28', 'expense', 'lebensmittel', 25)).toBe('2026-10-28');
+    expect(effectiveDay('2026-10-28', 'income', 'einkommen.erstattungen', 25)).toBe('2026-10-28');
+    expect(effectiveDay('2026-10-28', 'income', 'einkommen.gehalt', 0)).toBe('2026-10-28');
+  });
+});
