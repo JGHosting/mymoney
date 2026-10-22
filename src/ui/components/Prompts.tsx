@@ -16,7 +16,7 @@ export function Prompts() {
       <Sheet open onClose={() => close(null)} title={`Anmeldung ${prompt.bank}`}>
         <form onSubmit={e => { e.preventDefault(); if (value) close(value); }} className="pb-2">
           <p className="mb-3 text-[15px] text-ink-2">Gib deine Online-Banking-PIN ein. Sie wird nur für diesen Abruf verwendet und nirgends gespeichert.</p>
-          <input type="password" autoComplete="current-password" inputMode="text" autoFocus value={value} onChange={e => setValue(e.target.value)}
+          <input type="password" autoComplete="current-password" inputMode="numeric" autoFocus value={value} onChange={e => setValue(e.target.value)}
             className="mb-4 w-full rounded-2xl border border-line bg-surface px-4 py-3.5 outline-none focus:border-accent" placeholder="PIN" aria-label="PIN" />
           <Button variant="primary" type="submit" className="w-full" disabled={!value}>Anmelden</Button>
           <Button variant="ghost" type="button" className="mt-1 w-full" onClick={() => close(null)}>Abbrechen</Button>

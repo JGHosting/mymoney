@@ -8,13 +8,17 @@ export function Sheet({ open, onClose, title, children, className }: { open: boo
   const start = useRef<number | null>(null);
   const panel = useRef<HTMLDivElement>(null);
 
+  // onClose ändert sich bei jedem Rendern des Aufrufers. Nur beim Öffnen fokussieren – sonst springt der Fokus
+  // bei jeder Eingabe aus dem Textfeld und iOS schließt die Tastatur.
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; });
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
     addEventListener('keydown', onKey);
-    panel.current?.focus();
+    if (!panel.current?.contains(document.activeElement)) panel.current?.focus();
     return () => removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return createPortal(
