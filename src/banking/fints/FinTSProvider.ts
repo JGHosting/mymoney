@@ -32,6 +32,18 @@ export interface BridgeStateStore { load(): Promise<string | undefined>; save(st
 
 const DECOUPLED_POLL_MS = 2500;
 const DECOUPLED_TIMEOUT_MS = 5 * 60 * 1000;
+const NETWORK_RETRIES = 4;
+
+/**
+ * Wartet, bis die App wieder im Vordergrund ist. iOS pausiert die PWA, während man in SecureGo freigibt,
+ * und bricht dabei laufende Anfragen ab.
+ */
+const whenVisible = (): Promise<void> => new Promise(resolve => {
+  if (typeof document === 'undefined' || document.visibilityState !== 'hidden') return resolve();
+  const on = () => { if (document.visibilityState !== 'hidden') { document.removeEventListener('visibilitychange', on); resolve(); } };
+  document.addEventListener('visibilitychange', on);
+});
+const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | undefined>, stateStore?: BridgeStateStore): BankingProvider {
   return {
@@ -41,16 +53,24 @@ export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | unde
       const cfg = await getConfig();
       if (!cfg?.url || !cfg.token) throw new BankError('config');
       const base = cfg.url.replace(/\/+$/, '');
-      const call = async <T,>(method: string, path: string, body?: unknown): Promise<T> => {
-        let res: Response;
-        try {
-          res = await fetch(base + path, {
-            method,
-            headers: { Authorization: `Bearer ${cfg.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
-            body: body !== undefined ? JSON.stringify(body) : undefined
-          });
-        } catch {
-          throw new BankError('unreachable');
+      /**
+       * `retry`: nur für Anfragen, die gefahrlos wiederholt werden dürfen (Abfragen, Freigabe-Status).
+       * Die Anmeldung mit PIN und das Senden einer TAN werden nie automatisch wiederholt.
+       */
+      const call = async <T,>(method: string, path: string, body?: unknown, retry = false): Promise<T> => {
+        let res: Response | undefined;
+        for (let attempt = 0; !res; attempt++) {
+          try {
+            await whenVisible();
+            res = await fetch(base + path, {
+              method,
+              headers: { Authorization: `Bearer ${cfg.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+              body: body !== undefined ? JSON.stringify(body) : undefined
+            });
+          } catch {
+            if (!retry || attempt >= NETWORK_RETRIES) throw new BankError('unreachable');
+            await sleep(1000 * (attempt + 1));
+          }
         }
         const data = (await res.json().catch(() => ({}))) as T & { error?: BankErrorKind; detail?: string };
         if (!res.ok) throw new BankError(data.error ?? (res.status === 401 ? 'config' : 'fints'), undefined, data.detail);
@@ -77,7 +97,7 @@ export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | unde
         try {
           while (Date.now() < until) {
             if (cancelled) throw new BankError('cancelled');
-            const r = await call<{ ok?: boolean; pending?: boolean }>('POST', `/api/fints/sessions/${sid}/tan`, {});
+            const r = await call<{ ok?: boolean; pending?: boolean }>('POST', `/api/fints/sessions/${sid}/tan`, {}, true);
             if (r.ok) return;
             await new Promise(res => setTimeout(res, DECOUPLED_POLL_MS));
           }
@@ -87,18 +107,18 @@ export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | unde
       if (start.tan) await handleTan(start.tan);
 
       return {
-        getAccounts: () => call<BankAccountData[]>('GET', `/api/fints/sessions/${sid}/accounts`),
+        getAccounts: () => call<BankAccountData[]>('GET', `/api/fints/sessions/${sid}/accounts`, undefined, true),
         async getBalance(ext: string) {
           const path = `/api/fints/sessions/${sid}/accounts/${encodeURIComponent(ext)}/balance`;
-          let r = await call<BankBalance | { tan: TanChallenge }>('GET', path);
-          if ('tan' in r) { await handleTan(r.tan); r = await call<BankBalance>('GET', path); }
+          let r = await call<BankBalance | { tan: TanChallenge }>('GET', path, undefined, true);
+          if ('tan' in r) { await handleTan(r.tan); r = await call<BankBalance>('GET', path, undefined, true); }
           return r as BankBalance;
         },
         async getTransactions(ext: string, from: string, to: string) {
           const path = `/api/fints/sessions/${sid}/accounts/${encodeURIComponent(ext)}/transactions?from=${from}&to=${to}`;
           // Umsatzabruf älter als 90 Tage verlangt bei PSD2 oft eine zusätzliche TAN
-          let r = await call<BankTransactionData[] | { tan: TanChallenge }>('GET', path);
-          if (!Array.isArray(r)) { await handleTan(r.tan); r = await call<BankTransactionData[]>('GET', path); }
+          let r = await call<BankTransactionData[] | { tan: TanChallenge }>('GET', path, undefined, true);
+          if (!Array.isArray(r)) { await handleTan(r.tan); r = await call<BankTransactionData[]>('GET', path, undefined, true); }
           return r as BankTransactionData[];
         },
         async close() {

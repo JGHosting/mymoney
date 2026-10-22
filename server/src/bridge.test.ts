@@ -225,4 +225,37 @@ describe('App ↔ Brücke', () => {
     expect(existsSync(join(dir, 'banking-info.json'))).toBe(false);
     await app.close();
   }, 20000);
+
+  it('übersteht abgebrochene Anfragen während der SecureGo-Freigabe (App im Hintergrund)', async () => {
+    const app = buildServer({ ...cfg, stateStorage: 'client' }, { factory: fakeBank({ polls: 0 }) });
+    const addr = await app.listen({ host: '127.0.0.1', port: 0 });
+    const orig = globalThis.fetch;
+    let dropped = 0;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).includes('/tan') && dropped < 2) { dropped++; throw new TypeError('Load failed'); }
+      return orig(input, init);
+    }) as typeof fetch;
+    try {
+      const provider = createFinTSProvider(async () => ({ url: addr, token: TOKEN }));
+      const session = await provider.open({ askPin: async () => '9753', askTan: () => new Promise(() => undefined), closeTan: () => undefined });
+      const [acc] = await session.getAccounts();
+      expect(await session.getTransactions(acc!.externalId, '2025-10-08', '2026-10-08')).toHaveLength(1);
+      expect(dropped).toBe(2);
+      await session.close();
+    } finally {
+      globalThis.fetch = orig;
+      await app.close();
+    }
+  }, 20000);
+
+  it('wiederholt die Anmeldung mit PIN nie automatisch', async () => {
+    const orig = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => { calls++; throw new TypeError('Load failed'); }) as typeof fetch;
+    try {
+      const provider = createFinTSProvider(async () => ({ url: 'https://bruecke.example', token: TOKEN }));
+      await expect(provider.open({ askPin: async () => '9753', askTan: async () => null, closeTan: () => undefined })).rejects.toMatchObject({ kind: 'unreachable' });
+      expect(calls).toBe(1);
+    } finally { globalThis.fetch = orig; }
+  });
 });
