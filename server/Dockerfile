@@ -1,5 +1,5 @@
 # FinTS-Brücke – schlankes Image, läuft als nicht privilegierter Benutzer
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
-FROM node:22-alpine
+FROM node:25-alpine
 RUN apk add --no-cache tzdata && mkdir /data && chown node:node /data
 ENV NODE_ENV=production TZ=Europe/Berlin HOST=0.0.0.0 PORT=8787 DATA_DIR=/data
 WORKDIR /app
