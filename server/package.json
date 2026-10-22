@@ -15,7 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "fastify": "^5.12.5",
+    "fastify": "^5.12.7",
     "lib-fints": "^1.5.2"
   },
   "devDependencies": {
