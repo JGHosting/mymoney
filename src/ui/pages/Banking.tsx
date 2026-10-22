@@ -59,7 +59,7 @@ export default function Banking() {
           <GroupLabel>Protokoll</GroupLabel>
           <Group>
             {log.map(l => (
-              <Row key={l.seq} icon={l.ok ? <CircleCheck size={20} className="text-pos" /> : <CircleAlert size={20} className="text-neg" />}
+              <Row key={l.seq} wrapSub={!l.ok} icon={l.ok ? <CircleCheck size={20} className="text-pos" /> : <CircleAlert size={20} className="text-neg" />}
                 title={<span className="text-[15px]">{l.ok ? l.message : 'Fehlgeschlagen'}</span>}
                 sub={`${l.provider === 'mock' ? 'Demo' : 'VR Bank'} · ${fmtTimestamp(l.finishedAt)}${l.ok ? '' : ` · ${l.message}`}`} />
             ))}

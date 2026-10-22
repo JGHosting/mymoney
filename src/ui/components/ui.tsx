@@ -66,14 +66,14 @@ export function GroupLabel({ children }: { children: ReactNode }) {
   return <div className="mx-4 mb-1.5 text-[13px] font-medium text-ink-2">{children}</div>;
 }
 
-interface RowProps { icon?: ReactNode; title: ReactNode; sub?: ReactNode; value?: ReactNode; to?: string; onClick?: () => void; chevron?: boolean; danger?: boolean }
-export function Row({ icon, title, sub, value, to, onClick, chevron, danger }: RowProps) {
+interface RowProps { icon?: ReactNode; title: ReactNode; sub?: ReactNode; value?: ReactNode; to?: string; onClick?: () => void; chevron?: boolean; danger?: boolean; wrapSub?: boolean }
+export function Row({ icon, title, sub, value, to, onClick, chevron, danger, wrapSub }: RowProps) {
   const inner = (
     <>
       {icon && <span className="shrink-0">{icon}</span>}
       <span className="min-w-0 flex-1">
         <span className={cx('block truncate text-[17px]', danger && 'text-neg')}>{title}</span>
-        {sub && <span className="block truncate text-[13px] text-ink-2">{sub}</span>}
+        {sub && <span className={cx('block text-[13px] text-ink-2', wrapSub ? 'whitespace-pre-line break-words' : 'truncate')}>{sub}</span>}
       </span>
       {value != null && <span className="shrink-0 text-right text-[17px] text-ink-2">{value}</span>}
       {(chevron ?? !!to) && <ChevronRight size={18} className="shrink-0 text-ink-3" />}
