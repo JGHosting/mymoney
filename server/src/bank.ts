@@ -10,7 +10,7 @@ import type { AccountBalanceResponse, BankAccount, BankingInformation, ClientRes
 import type { BridgeConfig } from './config.js';
 import type { BankAccountData, BankBalance, BankTransactionData, TanChallenge } from './types.js';
 import { BridgeError } from './types.js';
-import { checkAnswers, externalIdOf, mapAccount, mapBalance, mapStatements } from './mapping.js';
+import { checkAnswers, day, externalIdOf, mapAccount, mapBalance, mapStatements } from './mapping.js';
 import type { InfoStore, Saved } from './state.js';
 import { applyLibFixes, StatementParseError } from './libfixes.js';
 import type { Statement } from 'lib-fints';
@@ -192,7 +192,10 @@ export class BankSession {
     const cached = this.results.get(key);
     if (cached) return cached;
     const [fy, fm, fd] = from.split('-').map(Number), [ty, tm, td] = to.split('-').map(Number);
-    const fetch = () => guard(() => this.client.getAccountStatements(this.find(ext), new Date(fy!, fm! - 1, fd!), new Date(ty!, tm! - 1, td!), this.preferCamt));
+    // Endet der Zeitraum heute, kein Enddatum senden: sonst lässt die Bank Umsätze mit Buchungstag in der Zukunft
+    // (z. B. Barabhebung heute, gebucht am nächsten Bankarbeitstag) weg.
+    const until = to >= day(new Date()) ? undefined : new Date(ty!, tm! - 1, td!);
+    const fetch = () => guard(() => this.client.getAccountStatements(this.find(ext), new Date(fy!, fm! - 1, fd!), until, this.preferCamt));
     let r: StatementResponse;
     try { r = await fetch(); }
     catch (e) {

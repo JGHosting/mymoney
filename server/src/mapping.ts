@@ -54,13 +54,14 @@ export function mapTransaction(t: Transaction, currency: string): BankTransactio
   return out;
 }
 
-export function mapStatements(statements: Statement[], from: string, to: string, noted: Statement[] = []): BankTransactionData[] {
+export function mapStatements(statements: Statement[], from: string, _to: string, noted: Statement[] = []): BankTransactionData[] {
   const out: BankTransactionData[] = [];
   for (const s of statements) {
     const currency = s.closingBalance?.currency || s.openingBalance?.currency || 'EUR';
     for (const t of s.transactions) {
       const m = mapTransaction(t, currency);
-      if (m.bookingDate >= from && m.bookingDate <= to) out.push(m);
+      // Kein Filter nach oben: Barabhebungen/Kartenzahlungen tragen oft den nächsten Bankarbeitstag als Buchungstag
+      if (m.bookingDate >= from) out.push(m);
     }
   }
   // Vorgemerkt: noch nicht gebucht. Kein Datumsfilter – die Bank liefert hier immer den aktuellen Stand.

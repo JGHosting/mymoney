@@ -99,7 +99,12 @@ export async function runSync(provider: ProviderId, prompter: SyncPrompter, onSt
         else { doneAccounts.delete(a.id); emptyHistory[a.id] = tries; }
       }
 
-      loaded = fetched.map(({ a, list }) => `${a.name} ${list.length}`);
+      // Neuester Buchungstag je Konto ins Protokoll – zeigt, wie aktuell die Bank geliefert hat
+      loaded = fetched.map(({ a, list }) => {
+        const newest = list.reduce((m, t) => (t.bookingDate > m ? t.bookingDate : m), '');
+        const pend = list.filter(t => t.pending).length;
+        return `${a.name} ${list.length}${pend ? ` (${pend} vorgemerkt)` : ''}${newest ? `, bis ${newest.slice(8, 10)}.${newest.slice(5, 7)}.` : ''}`;
+      });
       onStep('process');
       const ctx = await loadContext(d);
       for (const { a, list } of fetched) {

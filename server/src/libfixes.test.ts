@@ -95,3 +95,11 @@ describe('Vorgemerkte Umsätze', () => {
     expect(parseNoted(interaction, handle as never, bad as never, 'MT940')).toEqual([]);
   });
 });
+
+describe('Buchungstag in der Zukunft', () => {
+  it('Barabhebung heute, gebucht am nächsten Bankarbeitstag, wird nicht verworfen', () => {
+    const t = { entryDate: new Date(2026, 10, 2), valueDate: new Date(2026, 9, 29), amount: -100, purpose: 'GA', fundsCode: '', transactionType: '', customerReference: '', bankReference: '' };
+    const list = mapStatements([{ transactions: [t] } as never], '2026-10-15', '2026-10-29');
+    expect(list.map(x => x.bookingDate)).toEqual(['2026-11-02']);
+  });
+});
