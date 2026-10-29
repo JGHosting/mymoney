@@ -85,6 +85,7 @@ export default function TransactionDetail() {
           <div className="text-[13px] text-ink-2">Verwendungszweck</div>
           <div className="mt-0.5 select-text break-words text-[15px]">{tx.purpose || '–'}</div>
         </div>
+        {tx.pending && <Row title="Status" value="Vorgemerkt – noch nicht gebucht" />}
         {tx.bookingText && <Row title="Buchungsart" value={tx.bookingText} />}
         {(() => {
           const eff = effectiveDay(tx.bookingDate, map.get(tx.categoryId)?.kind ?? tx.kind, tx.categoryId, shiftDay);

@@ -7,6 +7,7 @@ import { runRoundtripTest, exportBackup, checkBackup, importBackup } from '../ba
 import { setProvider } from '../banking/registry';
 import { createMockProvider } from '../banking/mock/MockBankingProvider';
 import { setSetting } from '../core/db';
+import { importTransactions, loadContext } from './importer';
 
 setProvider(createMockProvider(0));
 const prompter = { askPin: async () => null, askTan: async () => null, closeTan: () => undefined };
@@ -142,5 +143,42 @@ describe('Historie pro Konto', () => {
     calls.length = 0;
     await runSync('fints', prompter, () => undefined, d);
     expect(calls.every(c => c.from > firstFrom)).toBe(true);
+  });
+});
+
+describe('Vorgemerkte Umsätze', () => {
+  it('werden ersetzt, verschwinden nach der Buchung und vererben eigene Änderungen', async () => {
+    const d = await freshDb('t-pending');
+    const ctx = await loadContext(d);
+    const base = { currency: 'EUR', purpose: 'REWE SAGT DANKE', counterpartyName: 'REWE' };
+    const acc = 'fints:DE1';
+
+    await importTransactions(d, acc, [{ ...base, bookingDate: '2026-10-28', amount: -1234, pending: true }], ctx);
+    let all = await d.transactions.toArray();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.pending).toBe(true);
+    await setNote(all[0]!.id, 'Party', d);
+
+    // gleicher Stand erneut → kein Duplikat, Notiz bleibt
+    await importTransactions(d, acc, [{ ...base, bookingDate: '2026-10-28', amount: -1234, pending: true }], ctx);
+    all = await d.transactions.toArray();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.notes).toBe('Party');
+
+    // gebucht (anderes Datum, anderer Text) → vorgemerkter weg, Notiz übernommen
+    await importTransactions(d, acc, [{ ...base, purpose: 'REWE MARKT 4711 KARTE', bookingDate: '2026-10-30', amount: -1234 }], ctx);
+    all = await d.transactions.toArray();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.pending).toBeUndefined();
+    expect(all[0]!.notes).toBe('Party');
+  });
+
+  it('ein vorgemerkter Umsatz überschreibt nie einen gebuchten', async () => {
+    const d = await freshDb('t-pending2');
+    const ctx = await loadContext(d);
+    const t = { currency: 'EUR', purpose: 'X', bookingDate: '2026-10-28', amount: -500 };
+    await importTransactions(d, 'a', [t, { ...t, pending: true }], ctx);
+    expect(await d.transactions.count()).toBe(2);
+    expect((await d.transactions.toArray()).filter(x => x.pending)).toHaveLength(1);
   });
 });

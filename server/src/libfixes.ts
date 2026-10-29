@@ -9,6 +9,11 @@
  *
  * 2. Nicht lesbare Kontoauszüge (CAMT/MT940) führten nur zu console.warn und einer LEEREN Liste.
  *    Jetzt wird daraus ein Fehler (StatementParseError), den die Brücke meldet bzw. mit MT940 erneut versucht.
+ *
+ * 3. Vorgemerkte Umsätze (Kartenzahlungen, Lastschriften, die die Bank noch nicht gebucht hat) liefert die
+ *    Bank im zweiten Teil der Antwort (HICAZ/HIKAZ „notedTransactions“). lib-fints liest nur die gebuchten.
+ *    Wir lesen die vorgemerkten mit demselben Parser und legen sie in `clientResponse.notedStatements` ab.
+ *    Ein Lesefehler dort ist kein Fehler des Abrufs – die gebuchten Umsätze kommen trotzdem an.
  */
 import { Dialog } from 'lib-fints';
 
@@ -61,6 +66,24 @@ export async function collectRemainingPortions(dialog: any, response: Msg): Prom
   }
 }
 
+/** Vorgemerkte Umsätze mit dem Parser von lib-fints lesen: die Segmente so umhängen, als wären es gebuchte. */
+export function parseNoted(interaction: any, handle: (r: unknown, c: unknown) => void, response: Msg, format: string): unknown[] {
+  const segId = interaction.responseSegId as string;
+  const noted = response.findAllSegments(segId).filter(s => {
+    const n = s.notedTransactions;
+    return Array.isArray(n) ? n.length > 0 : !!n;
+  });
+  if (!noted.length) return [];
+  const fake = { findAllSegments: (id: string) => id === segId ? noted.map(s => ({ ...s, bookedTransactions: s.notedTransactions })) : [] };
+  const out: { statements?: unknown[] } = {};
+  let failed = false;
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => { if (typeof args[0] === 'string' && /parsing failed/i.test(args[0])) failed = true; else warn(...args); };
+  try { handle.call(interaction, fake, out); } catch { failed = true; } finally { console.warn = warn; }
+  if (failed) { console.warn(`Vorgemerkte ${format}-Umsätze nicht lesbar – übersprungen`); return []; }
+  return out.statements ?? [];
+}
+
 /** Fängt die stillen Lesefehler von CAMT/MT940 ab und wirft sie stattdessen. */
 function makeParseStrict(interaction: any) {
   const proto = Object.getPrototypeOf(interaction);
@@ -79,6 +102,7 @@ function makeParseStrict(interaction: any) {
       const e = failure[1];
       throw new StatementParseError(format, e instanceof Error ? e.message : String(e));
     }
+    (clientResponse as { notedStatements?: unknown[] }).notedStatements = parseNoted(this, original, response as Msg, format);
   };
   proto.__strictParse = true;
 }

@@ -66,6 +66,7 @@ export interface Transaction {
   ignored?: boolean;           // nicht in Auswertungen
   notes?: string;
   splits?: Split[];            // aufgeteilt auf mehrere Kategorien (Summe = amount)
+  pending?: boolean;           // vorgemerkt, von der Bank noch nicht gebucht
   createdAt: number;
   updatedAt: number;
 }

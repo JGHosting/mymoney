@@ -6,6 +6,8 @@ export interface BankTransactionData {
   bankRef?: string; bookingDate: string; valueDate?: string; amount: number; currency: string;
   counterpartyName?: string; counterpartyIban?: string; purpose: string; bookingText?: string;
   e2eRef?: string; mandateRef?: string; creditorId?: string;
+  /** Vorgemerkt, noch nicht gebucht – kann sich bis zur Buchung ändern oder wegfallen. */
+  pending?: boolean;
 }
 export interface TanChallenge { text: string; decoupled: boolean; medium?: string }
 export type BankErrorKind = 'unreachable' | 'auth' | 'fints' | 'cancelled' | 'config' | 'other';

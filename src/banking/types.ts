@@ -31,6 +31,8 @@ export interface BankTransactionData {
   e2eRef?: string;
   mandateRef?: string;
   creditorId?: string;
+  /** Vorgemerkt, noch nicht gebucht – kann sich bis zur Buchung ändern oder wegfallen. */
+  pending?: boolean;
 }
 
 /** Rückfragen an den Nutzer während eines Syncs (PIN, TAN-Freigabe). */

@@ -13,9 +13,9 @@ export function TxRow({ tx, cat, account }: { tx: Transaction; cat?: Category; a
           {tx.recurringId && <Repeat size={13} className="shrink-0 text-ink-3" aria-label="wiederkehrend" />}
           {tx.ignored && <EyeOff size={13} className="shrink-0 text-ink-3" aria-label="ignoriert" />}
         </span>
-        <span className="block truncate text-[13px] text-ink-2">{tx.splits?.length ? 'Aufgeteilt' : cat?.name ?? 'Ohne Kategorie'}{account ? ` · ${account}` : ''}</span>
+        <span className="block truncate text-[13px] text-ink-2">{tx.pending ? 'Vorgemerkt · ' : ''}{tx.splits?.length ? 'Aufgeteilt' : cat?.name ?? 'Ohne Kategorie'}{account ? ` · ${account}` : ''}</span>
       </span>
-      <Amount cents={tx.amount} className="text-[17px] font-medium" />
+      <Amount cents={tx.amount} className={cx('text-[17px] font-medium', tx.pending && 'italic opacity-70')} />
     </Link>
   );
 }

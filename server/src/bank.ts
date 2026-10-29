@@ -13,6 +13,10 @@ import { BridgeError } from './types.js';
 import { checkAnswers, externalIdOf, mapAccount, mapBalance, mapStatements } from './mapping.js';
 import type { InfoStore, Saved } from './state.js';
 import { applyLibFixes, StatementParseError } from './libfixes.js';
+import type { Statement } from 'lib-fints';
+
+/** Vorgemerkte Umsätze, von libfixes.ts an die Antwort gehängt. */
+const noted = (r: StatementResponse): Statement[] => (r as StatementResponse & { notedStatements?: Statement[] }).notedStatements ?? [];
 export type { InfoStore, Saved } from './state.js';
 
 /** Teilmenge von FinTSClient, die wir nutzen (für Tests austauschbar). */
@@ -149,7 +153,7 @@ export class BankSession {
     }
     checkAnswers(r.bankAnswers);
     if (r.requiresTan) { this.pending = { ...p, ref: r.tanReference ?? p.ref }; return { pending: true }; }
-    this.results.set(p.key, mapStatements(r.statements ?? [], p.from, p.to));
+    this.results.set(p.key, mapStatements(r.statements ?? [], p.from, p.to, noted(r)));
     this.pending = null;
     return { ok: true };
   }
@@ -200,7 +204,7 @@ export class BankSession {
     this.afterResponse(r, { kind: 'statements', ref: '', key, from, to });
     if (r.requiresTan) return { tan: this.challenge()! };
     checkAnswers(r.bankAnswers);
-    const list = mapStatements(r.statements ?? [], from, to);
+    const list = mapStatements(r.statements ?? [], from, to, noted(r));
     this.results.set(key, list);
     return list;
   }
