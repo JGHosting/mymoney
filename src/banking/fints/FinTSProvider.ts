@@ -24,6 +24,7 @@
  * Fehler: { error: BankErrorKind, detail? } mit HTTP 4xx/5xx.
  */
 import type { BankAccountData, BankBalance, BankingProvider, BankTransactionData, ProviderSession, SyncPrompter, TanChallenge } from '../types';
+import { forgetPin, getPinMode, getSessionPin, rememberSession } from '../pinStore';
 import { BankError, type BankErrorKind } from '../types';
 
 export interface BridgeConfig { url: string; token: string }
@@ -77,10 +78,20 @@ export function createFinTSProvider(getConfig: () => Promise<BridgeConfig | unde
         return data;
       };
 
-      const pin = await prompter.askPin('VR Bank');
+      // Gemerkte PIN (nur im Arbeitsspeicher) zuerst, sonst fragen – das Formular bietet ggf. Face ID an
+      const mode = await getPinMode();
+      const pin = (mode !== 'ask' ? getSessionPin() : null) ?? await prompter.askPin('VR Bank');
       if (pin == null) throw new BankError('cancelled');
       const state = await stateStore?.load().catch(() => undefined);
-      const start = await call<{ sessionId: string; tan?: TanChallenge }>('POST', '/api/fints/sessions', state ? { pin, state } : { pin });
+      let start: { sessionId: string; tan?: TanChallenge };
+      try {
+        start = await call<{ sessionId: string; tan?: TanChallenge }>('POST', '/api/fints/sessions', state ? { pin, state } : { pin });
+      } catch (e) {
+        // PIN abgelehnt → nie wieder automatisch verwenden (Sperrgefahr)
+        if (e instanceof BankError && e.kind === 'auth') await forgetPin();
+        throw e;
+      }
+      if (mode !== 'ask') rememberSession(pin);
       const sid = encodeURIComponent(start.sessionId);
 
       /** TAN-Schritt: Eingabe (chipTAN) oder Warten auf Freigabe in der SecureGo-plus-App. */

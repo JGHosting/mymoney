@@ -182,3 +182,28 @@ describe('Vorgemerkte Umsätze', () => {
     expect((await d.transactions.toArray()).filter(x => x.pending)).toHaveLength(1);
   });
 });
+
+describe('PIN merken', () => {
+  it('Arbeitsspeicher, Moduswechsel und Vergessen', async () => {
+    const { getPinMode, setPinMode, rememberSession, getSessionPin, forgetPin } = await import('../banking/pinStore');
+    const d = await freshDb('t-pin');
+    expect(await getPinMode(d)).toBe('ask');
+    await setPinMode('session', d);
+    rememberSession('1234');
+    expect(getSessionPin()).toBe('1234');
+    await d.settings.put({ key: 'pinVault', value: { credId: 'x', iv: 'y', ct: 'z' } });
+    await forgetPin(d);                      // Bank hat die PIN abgelehnt
+    expect(getSessionPin()).toBeNull();
+    expect(await d.settings.get('pinVault')).toBeUndefined();
+    rememberSession('1234');
+    await setPinMode('ask', d);
+    expect(getSessionPin()).toBeNull();
+  });
+  it('Passkey-Daten und PIN landen nie im Backup', async () => {
+    const d = await freshDb('t-pin-backup');
+    await d.settings.bulkPut([{ key: 'pinCred', value: { credId: 'c', salt: 's' } }, { key: 'pinVault', value: { credId: 'c', iv: 'i', ct: 'x' } }]);
+    const json = JSON.stringify(await exportBackup(d));
+    expect(json).not.toContain('pinVault');
+    expect(json).not.toContain('pinCred');
+  });
+});

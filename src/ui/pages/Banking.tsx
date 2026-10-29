@@ -1,13 +1,14 @@
 /** Bankverbindungen: Demo-Daten, VR Bank über FinTS (Brücke), Historie, Sync-Protokoll. */
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { FlaskConical, Landmark, CircleCheck, CircleAlert } from 'lucide-react';
+import { FlaskConical, Landmark, CircleCheck, CircleAlert, ScanFace } from 'lucide-react';
 import { db, getSetting, setSetting, deleteSetting } from '../../core/db';
 import { fmtTimestamp } from '../../core/dates';
 import { BackBar, Button, Card, Group, GroupLabel, PageTitle, Row, Segmented, cx } from '../components/ui';
 import { activeProviders, setActiveProviders, removeProviderData, resetHistory, DEFAULT_HISTORY_MONTHS } from '../../data/sync';
 import type { BridgeConfig } from '../../banking/fints/FinTSProvider';
 import { useApp } from '../../store/app';
+import { createPasskey, faceIdAvailable, forgetPin, getPinMode, hasCred, hasVault, removeFaceId, setPinMode, type PinMode } from '../../banking/pinStore';
 
 export default function Banking() {
   const providers = useLiveQuery(async () => ((await db.settings.get('providers'))?.value as string[] | undefined) ?? [], []);
@@ -30,6 +31,7 @@ export default function Banking() {
 
       <GroupLabel>VR Bank</GroupLabel>
       <FinTSCard active={!!fints} onEnable={() => void enable('fints')} />
+      {fints && <PinSettings />}
 
       <GroupLabel>Demo</GroupLabel>
       <Group footer="Realistische Beispielumsätze der letzten 12 Monate – ideal zum Ausprobieren. Sie liegen getrennt von echten Bankdaten und lassen sich vollständig entfernen.">
@@ -89,7 +91,7 @@ function FinTSCard({ active, onEnable }: { active: boolean; onEnable: () => void
         <span className="grid size-10 place-items-center rounded-full bg-accent-soft text-accent"><Landmark size={20} /></span>
         <div>
           <div className="font-semibold">VR Bank über FinTS</div>
-          <div className="text-[13px] text-ink-2">{active ? 'Verbunden – PIN wird bei jedem Abruf abgefragt' : 'Direkt über die offizielle Bankschnittstelle'}</div>
+          <div className="text-[13px] text-ink-2">{active ? 'Verbunden' : 'Direkt über die offizielle Bankschnittstelle'}</div>
         </div>
       </div>
       <p className="mb-4 text-[14px] leading-snug text-ink-2">
@@ -112,5 +114,57 @@ function FinTSCard({ active, onEnable }: { active: boolean; onEnable: () => void
         ? <Button variant="primary" className="mt-3 w-full" disabled={!saved} onClick={onEnable}>Verbinden & synchronisieren</Button>
         : <Button variant="ghost" className={cx('mt-2 w-full text-neg')} onClick={async () => { await setActiveProviders((await activeProviders()).filter(p => p !== 'fints')); await deleteSetting('sync:fints'); }}>Verbindung trennen (Umsätze bleiben)</Button>}
     </Card>
+  );
+}
+
+function PinSettings() {
+  const { showToast } = useApp();
+  const [mode, setMode] = useState<PinMode>('ask');
+  const [can, setCan] = useState<boolean | null>(null);
+  const [cred, setCred] = useState(false);
+  const [vault, setVault] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const load = async () => {
+    const [m, c, v, a] = await Promise.all([getPinMode(), hasCred(), hasVault(), faceIdAvailable()]);
+    setMode(m); setCred(c); setVault(v); setCan(a);
+  };
+  useEffect(() => { void load(); }, []);
+
+  const change = async (m: PinMode) => { setErr(''); await setPinMode(m); await load(); };
+  const setup = async () => {
+    setBusy(true); setErr('');
+    try { await createPasskey(); await load(); showToast('Face ID eingerichtet – beim nächsten Abruf PIN einmal eingeben'); }
+    catch (e) { setErr(e instanceof DOMException ? (e.name === 'NotAllowedError' ? 'Abgebrochen.' : e.message) : e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const footer = mode === 'ask' ? 'Die PIN wird bei jedem Abruf abgefragt.'
+    : mode === 'session' ? 'Die PIN bleibt nur im Arbeitsspeicher, bis du die App schließt oder sie 30 Minuten im Hintergrund war.'
+    : 'Die PIN liegt verschlüsselt auf diesem iPhone. Entschlüsseln geht nur mit Face ID. Sie wird nie gesendet und nie ins Backup übernommen. Lehnt die Bank sie ab, wird sie sofort gelöscht.';
+  return (
+    <>
+      <GroupLabel>PIN merken</GroupLabel>
+      <Group footer={footer}>
+        <div className="px-4 py-3">
+          <Segmented value={mode} onChange={v => void change(v)}
+            options={[{ value: 'ask', label: 'Nie' }, { value: 'session', label: 'Bis zum Schließen' }, ...(can ? [{ value: 'faceid' as const, label: 'Face ID' }] : [])]} />
+        </div>
+        {mode === 'faceid' && !cred && (
+          <Row icon={<ScanFace size={20} className="text-accent" />} title={<span className="text-accent">{busy ? 'Einrichten …' : 'Face ID einrichten'}</span>} chevron={false} onClick={() => void setup()} />
+        )}
+        {mode === 'faceid' && cred && (
+          <Row icon={<ScanFace size={20} className="text-pos" />} title="Face ID" value={vault ? 'PIN gespeichert' : 'PIN beim nächsten Abruf eingeben'} chevron={false} />
+        )}
+        {mode !== 'ask' && (vault || mode === 'session') && (
+          <Row title={<span className="text-neg">Gemerkte PIN löschen</span>} chevron={false} onClick={async () => { await forgetPin(); await load(); showToast('PIN gelöscht'); }} />
+        )}
+        {mode === 'faceid' && cred && (
+          <Row title={<span className="text-neg">Face ID entfernen</span>} chevron={false} onClick={async () => { await removeFaceId(); await setPinMode('session'); await load(); showToast('Face ID entfernt'); }} />
+        )}
+        {err && <div className="px-4 py-3 text-[14px] text-neg">{err}</div>}
+        {can === false && <div className="px-4 py-3 text-[13px] text-ink-2">Face ID ist hier nicht verfügbar (ab iOS 18 in der installierten App).</div>}
+      </Group>
+    </>
   );
 }
