@@ -248,6 +248,25 @@ describe('App ↔ Brücke', () => {
     }
   }, 20000);
 
+  it('gemerkte PIN: wird benutzt, und nach Ablehnung durch die Bank sofort vergessen', async () => {
+    const app = buildServer({ ...cfg, stateStorage: 'client' }, { factory: fakeBank({ polls: 0 }) });
+    const addr = await app.listen({ host: '127.0.0.1', port: 0 });
+    let mem: string | null = '0000';   // veraltete PIN
+    const calls: string[] = [];
+    const memory = { recall: async () => mem, remember: async (p: string) => { calls.push('remember'); mem = p; }, forget: async () => { calls.push('forget'); mem = null; } };
+    const provider = createFinTSProvider(async () => ({ url: addr, token: TOKEN }), undefined, memory);
+    const asked: string[] = [];
+    const prompter = { askPin: async () => { asked.push('pin'); return '9753'; }, askTan: () => new Promise<string | null>(() => undefined), closeTan: () => undefined };
+    await expect(provider.open(prompter)).rejects.toMatchObject({ kind: 'auth' });
+    expect(calls).toEqual(['forget']);
+    expect(asked).toEqual([]);                       // gemerkte PIN statt Abfrage, aber kein zweiter Versuch
+    const s = await provider.open(prompter);         // nächster Abruf fragt wieder
+    expect(asked).toEqual(['pin']);
+    expect(mem).toBe('9753');
+    await s.close();
+    await app.close();
+  }, 20000);
+
   it('wiederholt die Anmeldung mit PIN nie automatisch', async () => {
     const orig = globalThis.fetch;
     let calls = 0;

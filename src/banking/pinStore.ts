@@ -139,3 +139,10 @@ export async function removeFaceId(d: MyMoneyDB = mainDb) {
   await deleteSetting('pinVault', d);
   await deleteSetting('pinCred', d);
 }
+
+/** Anbindung an den FinTSProvider. */
+export const pinMemory = {
+  recall: async () => ((await getPinMode()) !== 'ask' ? sessionPin : null),
+  remember: async (pin: string) => { if ((await getPinMode()) !== 'ask') sessionPin = pin; },
+  forget: () => forgetPin()
+};
